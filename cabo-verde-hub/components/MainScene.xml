@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="MainScene" extends="Scene">
+  <script type="text/brightscript" uri="pkg:/components/MainScene.brs" />
+  
+  <children>
+    <!-- Background Gradient -->
+    <Rectangle id="background" 
+               color="0x1565c0FF" 
+               width="1920" 
+               height="1080">
+      <Rectangle color="0x0d47a1FF" width="1920" height="540" />
+    </Rectangle>
+    
+    <!-- Header with Cape Verde styling -->
+    <Rectangle id="header" 
+               color="0x0d47a199" 
+               width="1920" 
+               height="140">
+      <Rectangle color="0xffc10780" width="1920" height="3" translation="[0, 137]" />
+      
+      <!-- Flag representation -->
+      <Rectangle color="0x003f7fFF" width="80" height="60" translation="[60, 40]" />
+      <Rectangle color="0xffffffFF" width="80" height="3" translation="[60, 75]" />
+      <Rectangle color="0xffc107FF" width="80" height="3" translation="[60, 78]" />
+      <Rectangle color="0xffffffFF" width="80" height="3" translation="[60, 81]" />
+      
+      <Label id="titleLabel" 
+             text="Cabo Verde Hub 🇨🇻" 
+             font="font:LargeBoldSystemFont" 
+             color="0xffc107FF"
+             translation="[170, 45]" />
+             
+      <Label text="Kultura • Muzika • Notisia" 
+             font="font:MediumSystemFont" 
+             color="0xffffffCC"
+             translation="[1600, 85]" />
+    </Rectangle>
+    
+    <!-- Sidebar for Categories -->
+    <Rectangle id="sidebar" 
+               color="0xffffff0d" 
+               width="400" 
+               height="900" 
+               translation="[60, 170]">
+      
+      <RowList id="categoryList" 
+               translation="[30, 30]"
+               itemSize="[340, 120]"
+               itemSpacing="[0, 20]"
+               numRows="5"
+               showRowLabel="[false]"
+               showRowCounter="[false]" />
+    </Rectangle>
+    
+    <!-- Main Content Area -->
+    <Rectangle id="contentArea" 
+               color="0xffffff03" 
+               width="1400" 
+               height="900" 
+               translation="[500, 170]">
+      
+      <!-- Section Header -->
+      <Label id="sectionTitle" 
+             text="Muzika Popular" 
+             font="font:LargeBoldSystemFont" 
+             color="0xffc107FF"
+             translation="[40, 30]" />
+             
+      <!-- Filter Chips -->
+      <Rectangle id="filterContainer" 
+                 color="0x00000000" 
+                 width="600" 
+                 height="50" 
+                 translation="[800, 30]">
+        <Label text="Novos • Popular • Clássicos" 
+               font="font:MediumSystemFont" 
+               color="0xffffff80"
+               translation="[0, 15]" />
+      </Rectangle>
+      
+      <!-- Video Grid -->
+      <RowList id="videoGrid"
+               translation="[40, 100]"
+               itemSize="[320, 240]"
+               itemSpacing="[25, 25]"
+               numRows="3"
+               numColumns="4"
+               showRowLabel="[false]"
+               showRowCounter="[false]" />
+    </Rectangle>
+    
+    <!-- Loading State -->
+    <Rectangle id="loadingOverlay" 
+               color="0x000000CC" 
+               width="1920" 
+               height="1080" 
+               visible="false">
+      <Rectangle color="0xffc10720" 
+                 width="400" 
+                 height="200" 
+                 translation="[760, 440]">
+        <Label id="loadingText" 
+               text="Carregando conteúdo..."
+               font="font:LargeSystemFont"
+               color="0xffc107FF"
+               translation="[100, 85]" />
+      </Rectangle>
+    </Rectangle>
+    
+    <!-- Error State -->
+    <Rectangle id="errorOverlay" 
+               color="0x000000CC" 
+               width="1920" 
+               height="1080" 
+               visible="false">
+      <Rectangle color="0x66000020" 
+                 width="600" 
+                 height="300" 
+                 translation="[660, 390]">
+        <Label id="errorText" 
+               text="Erro ao carregar vídeos"
+               font="font:LargeSystemFont"
+               color="0xff5722FF"
+               translation="[150, 100]" />
+        <Label text="Pressione OK para tentar novamente" 
+               font="font:MediumSystemFont" 
+               color="0xffffffCC"
+               translation="[120, 150]" />
+      </Rectangle>
+    </Rectangle>
+    
+    <!-- Remote Control Hints -->
+    <Rectangle id="hintsBar" 
+               color="0x00000000" 
+               width="1920" 
+               height="60" 
+               translation="[0, 1020]">
+      <Label text="◄► Navigate  •  OK Select  •  ⌂ Home  •  ⟵ Back" 
+             font="font:SmallSystemFont" 
+             color="0xffffff60"
+             translation="[760, 20]" />
+    </Rectangle>
+  </children>
+</component>
