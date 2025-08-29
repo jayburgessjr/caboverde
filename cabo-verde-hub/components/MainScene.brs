@@ -1,6 +1,9 @@
 function init()
     m.top.setFocus(true)
     
+    ' Initialize configuration
+    m.config = initializeConfig()
+    
     ' Initialize UI components
     m.categoryList = m.top.findNode("categoryList")
     m.videoGrid = m.top.findNode("videoGrid")
@@ -8,13 +11,24 @@ function init()
     m.loadingOverlay = m.top.findNode("loadingOverlay")
     m.errorOverlay = m.top.findNode("errorOverlay")
     
-    ' YouTube API Configuration
-    m.apiKey = "AIzaSyDVKM9I7EAwJUO15eOrq_8a9sZ-94EG5aU"
-    m.baseUrl = "https://www.googleapis.com/youtube/v3/search"
-    
     ' Current state
     m.currentCategory = 0
     m.focusState = "category"  ' "category" or "video"
+    
+    ' Pagination state
+    m.currentPage = {}
+    m.hasMoreContent = {}
+    m.loadingMore = false
+    
+    ' Request handling
+    m.activeRequests = {}
+    m.nextRequestId = 0
+    
+    ' Create response timer for async requests
+    m.responseTimer = CreateObject("roSGNode", "Timer")
+    m.responseTimer.duration = 0.1  ' Check every 100ms
+    m.responseTimer.repeat = true
+    m.responseTimer.observeField("fire", "onResponseTimer")
     
     ' Cape Verdean search configurations
     setupCategories()
@@ -96,6 +110,7 @@ function loadCategoryContent(categoryIndex as Integer)
     fetchYouTubeVideos(category.searchTerms, categoryIndex)
 end function
 
+<<<<<<< HEAD
 function fetchYouTubeVideos(searchQuery as String, categoryIndex as Integer)
     ' Check cache first (5-minute cache)
     cacheKey = "category_" + categoryIndex.ToStr()
@@ -126,28 +141,73 @@ function fetchYouTubeVideos(searchQuery as String, categoryIndex as Integer)
     ' CRITICAL: Enable certificate verification for security
     request.EnablePeerVerification(true)
     request.EnableHostVerification(true)
+=======
+function fetchYouTubeVideos(searchQuery as String, categoryIndex as Integer, pageToken = "" as String)
+    ' Initialize pagination for category if needed
+    categoryKey = categoryIndex.ToStr()
+    if m.currentPage[categoryKey] = invalid then
+        m.currentPage[categoryKey] = ""
+        m.hasMoreContent[categoryKey] = true
+    end if
     
-    ' Make request
-    port = CreateObject("roMessagePort")
-    request.SetPort(port)
+    ' Don't fetch if loading more content
+    if m.loadingMore and pageToken <> "" then return
+>>>>>>> origin/main
     
-    if request.AsyncGetToString() then
-        ' Handle response in separate function
-        m.pendingRequest = {
-            port: port,
-            request: request,
-            categoryIndex: categoryIndex
-        }
+    ' Check cache first (only for first page)
+    if pageToken = "" then
+        cacheKey = createCacheKey(searchQuery, categoryIndex)
+        cachedData = getCachedResponse(cacheKey)
         
+<<<<<<< HEAD
         ' Start response handler with timer
         m.responseTimer = CreateObject("roTimespan")
         m.responseTimer.mark()
         startResponseChecker()
+=======
+        if cachedData <> invalid then
+            ' Use cached data
+            processYouTubeResponse(FormatJSON(cachedData), categoryIndex, true, "", false)
+            return
+        end if
+    end if
+    
+    ' Build YouTube API URL using new service
+    url = buildYouTubeUrlWithPagination(searchQuery, m.config, pageToken)
+    
+    ' Set loading state
+    if pageToken = "" then
+        m.loadingOverlay.visible = true
+    else
+        m.loadingMore = true
+    end if
+    
+    ' Make secure async request
+    requestContext = makeAsyncRequest(url, m.config, "onYouTubeResponse", {
+        categoryIndex: categoryIndex,
+        cacheKey: cacheKey,
+        pageToken: pageToken,
+        isLoadMore: pageToken <> ""
+    })
+    
+    if requestContext <> invalid then
+        ' Store request with unique ID
+        requestId = m.nextRequestId
+        m.nextRequestId = m.nextRequestId + 1
+        m.activeRequests[requestId.ToStr()] = requestContext
+        
+        ' Start response timer if not already running
+        if m.responseTimer.control <> "start" then
+            m.responseTimer.control = "start"
+        end if
+>>>>>>> origin/main
     else
         showError("Falha na conexão com YouTube")
+        m.loadingMore = false
     end if
 end function
 
+<<<<<<< HEAD
 function checkResponse()
     ' FIXED: Non-recursive response checking with timer
     if m.pendingRequest <> invalid then
@@ -179,11 +239,50 @@ function checkResponse()
                 if m.responseCheckTimer <> invalid then
                     m.responseCheckTimer.control = "stop"
                 end if
+=======
+function onResponseTimer()
+    ' Handle all active requests
+    requestsToRemove = []
+    
+    for each requestId in m.activeRequests
+        requestContext = m.activeRequests[requestId]
+        
+        if requestContext <> invalid then
+            result = handleHttpResponse(requestContext)
+            
+            if result <> invalid then
+                ' Request completed
+                if result.success then
+                    processYouTubeResponse(
+                        result.data,
+                        requestContext.context.categoryIndex,
+                        false,
+                        requestContext.context.cacheKey,
+                        requestContext.context.isLoadMore
+                    )
+                else
+                    showError(result.error)
+                    m.loadingMore = false
+                end if
+                
+                requestsToRemove.Push(requestId)
+>>>>>>> origin/main
             end if
         end if
+    end for
+    
+    ' Remove completed requests
+    for each requestId in requestsToRemove
+        m.activeRequests.Delete(requestId)
+    end for
+    
+    ' Stop timer if no active requests
+    if m.activeRequests.Count() = 0 then
+        m.responseTimer.control = "stop"
     end if
 end function
 
+<<<<<<< HEAD
 function startResponseChecker()
     ' Create timer for non-blocking response checking
     if m.responseCheckTimer = invalid then
@@ -207,55 +306,96 @@ function processYouTubeResponse(response as String, categoryIndex as Integer)
         if jsonResponse <> invalid and jsonResponse.items <> invalid then
             ' Create video content
             videoContent = CreateObject("roSGNode", "ContentNode")
+=======
+function processYouTubeResponse(response as String, categoryIndex as Integer, fromCache = false as Boolean, cacheKey = "" as String, isLoadMore = false as Boolean)
+    ' Validate response using new service
+    validation = validateYouTubeResponse(response)
+    
+    if not validation.valid then
+        showError(validation.error)
+        m.loadingMore = false
+        return
+    end if
+    
+    jsonResponse = validation.data
+    categoryKey = categoryIndex.ToStr()
+    
+    ' Update pagination info
+    if jsonResponse.nextPageToken <> invalid then
+        m.currentPage[categoryKey] = jsonResponse.nextPageToken
+        m.hasMoreContent[categoryKey] = true
+    else
+        m.hasMoreContent[categoryKey] = false
+    end if
+    
+    ' Cache response if not from cache and first page
+    if not fromCache and cacheKey <> "" and not isLoadMore then
+        setCachedResponse(cacheKey, jsonResponse)
+    end if
+    
+    ' Create or append to video content
+    videoContent = invalid
+    if isLoadMore and m.videoGrid.content <> invalid then
+        ' Append to existing content
+        videoContent = m.videoGrid.content
+    else
+        ' Create new content
+        videoContent = CreateObject("roSGNode", "ContentNode")
+    end if
+    
+    itemCount = 0
+    for each item in jsonResponse.items
+        if item.snippet <> invalid then
+            videoItem = CreateObject("roSGNode", "ContentNode")
+>>>>>>> origin/main
             
-            for each item in jsonResponse.items
-                if item.snippet <> invalid then
-                    videoItem = CreateObject("roSGNode", "ContentNode")
-                    
-                    ' Basic info
-                    videoItem.title = item.snippet.title
-                    videoItem.description = item.snippet.description
-                    
-                    ' Thumbnail
-                    if item.snippet.thumbnails <> invalid then
-                        if item.snippet.thumbnails.high <> invalid then
-                            videoItem.hdPosterUrl = item.snippet.thumbnails.high.url
-                        else if item.snippet.thumbnails.medium <> invalid then
-                            videoItem.hdPosterUrl = item.snippet.thumbnails.medium.url
-                        end if
-                    end if
-                    
-                    ' Video URL and metadata
-                    if item.id <> invalid and item.id.videoId <> invalid then
-                        videoItem.videoId = item.id.videoId
-                        videoItem.url = "https://www.youtube.com/watch?v=" + item.id.videoId
-                    end if
-                    
-                    ' Additional metadata
-                    videoItem.channelTitle = item.snippet.channelTitle
-                    videoItem.publishedAt = item.snippet.publishedAt
-                    
-                    videoContent.appendChild(videoItem)
+            ' Basic info
+            videoItem.title = item.snippet.title
+            videoItem.description = item.snippet.description
+            
+            ' Thumbnail with fallback
+            if item.snippet.thumbnails <> invalid then
+                if item.snippet.thumbnails.high <> invalid then
+                    videoItem.hdPosterUrl = item.snippet.thumbnails.high.url
+                else if item.snippet.thumbnails.medium <> invalid then
+                    videoItem.hdPosterUrl = item.snippet.thumbnails.medium.url
+                else if item.snippet.thumbnails.default <> invalid then
+                    videoItem.hdPosterUrl = item.snippet.thumbnails.default.url
                 end if
-            end for
-            
-            ' Update UI
-            m.videoGrid.content = videoContent
-            m.loadingOverlay.visible = false
-            
-            ' Set focus to video grid if we have content
-            if videoContent.getChildCount() > 0 then
-                m.focusState = "video"
-                m.videoGrid.setFocus(true)
             end if
             
-        else
-            showError("Nenhum vídeo encontrado")
+            ' Video URL and metadata
+            if item.id <> invalid and item.id.videoId <> invalid then
+                videoItem.videoId = item.id.videoId
+                videoItem.url = "https://www.youtube.com/watch?v=" + item.id.videoId
+            end if
+            
+            ' Additional metadata
+            videoItem.channelTitle = item.snippet.channelTitle
+            videoItem.publishedAt = item.snippet.publishedAt
+            
+            videoContent.appendChild(videoItem)
+            itemCount = itemCount + 1
         end if
-        
-    catch error
-        showError("Erro ao processar resposta")
-    end try
+    end for
+    
+    ' Update UI
+    m.videoGrid.content = videoContent
+    m.loadingOverlay.visible = false
+    m.loadingMore = false
+    
+    ' Set focus to video grid if we have content
+    if videoContent.getChildCount() > 0 then
+        if not isLoadMore then
+            m.focusState = "video"
+            m.videoGrid.setFocus(true)
+        end if
+    else if not isLoadMore then
+        showError("Nenhum vídeo encontrado")
+    end if
+    
+    ' Show load more indicator if more content available
+    updateLoadMoreIndicator(categoryIndex)
 end function
 
 function onVideoSelected()
@@ -295,7 +435,11 @@ function showError(message as String)
     m.errorOverlay.visible = true
     m.top.findNode("errorText").text = message
     
+<<<<<<< HEAD
     ' FIXED: Non-blocking error timer
+=======
+    ' Create non-blocking timer for auto-hide
+>>>>>>> origin/main
     if m.errorTimer = invalid then
         m.errorTimer = CreateObject("roSGNode", "Timer")
         m.errorTimer.duration = 5
@@ -310,6 +454,7 @@ function onErrorTimer()
     m.errorOverlay.visible = false
 end function
 
+<<<<<<< HEAD
 function getCachedResponse(cacheKey as String) as String
     ' Get cached API response if still valid (5 minutes)
     sec = CreateObject("roRegistrySection", "CaboVerdeCache")
@@ -345,6 +490,35 @@ function setCachedResponse(cacheKey as String, data as String)
     sec.Write(cacheKey, FormatJSON(cacheData))
     sec.Flush()
     print "[Cache] Cached response for: " + cacheKey
+=======
+function loadMoreContent(categoryIndex as Integer)
+    if categoryIndex < 0 or categoryIndex >= m.categories.count() then return
+    
+    categoryKey = categoryIndex.ToStr()
+    if m.hasMoreContent[categoryKey] = invalid or not m.hasMoreContent[categoryKey] then return
+    
+    category = m.categories[categoryIndex]
+    pageToken = m.currentPage[categoryKey]
+    
+    if pageToken <> invalid and pageToken <> "" then
+        fetchYouTubeVideos(category.searchTerms, categoryIndex, pageToken)
+    end if
+end function
+
+function updateLoadMoreIndicator(categoryIndex as Integer)
+    ' Add visual indicator if more content is available
+    categoryKey = categoryIndex.ToStr()
+    if m.hasMoreContent[categoryKey] = invalid then return
+    
+    ' Update section title to show loading state or more available
+    sectionText = m.categories[categoryIndex].sectionTitle
+    
+    if m.hasMoreContent[categoryKey] then
+        sectionText = sectionText + " (▼ Mais conteúdo disponível)"
+    end if
+    
+    m.sectionTitle.text = sectionText
+>>>>>>> origin/main
 end function
 
 function onKeyEvent(key as String, press as Boolean) as Boolean
@@ -381,6 +555,18 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
                     m.focusState = "video"
                     m.videoGrid.setFocus(true)
                     handled = true
+                end if
+            end if
+            
+        else if key = "down" then
+            ' Load more content when reaching end of list
+            if m.focusState = "video" and not m.loadingMore then
+                selectedIndex = m.videoGrid.itemSelected
+                totalItems = m.videoGrid.content.getChildCount()
+                
+                ' If near the end, load more content
+                if selectedIndex >= totalItems - 4 then  ' Load when 4 items from end
+                    loadMoreContent(m.currentCategory)
                 end if
             end if
         end if

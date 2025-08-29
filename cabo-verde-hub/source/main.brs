@@ -1,14 +1,5 @@
 function main()
-    ' Cabo Verde Hub v1.0.2 - Post-Merge Conflict Resolution
-    appStartTime = CreateObject("roTimespan").TotalMilliseconds()
-    print "Starting Cabo Verde Hub v1.0.2..."
-    
-    ' Handle deep linking if present
-    args = {}
-    if GetGlobalAA().DoesExist("args") then
-        args = GetGlobalAA().args
-        print "Deep link args: " + FormatJSON(args)
-    end if
+    print "Starting Cabo Verde Hub..."
     
     screen = CreateObject("roSGScreen")
     m.port = CreateObject("roMessagePort")
@@ -23,6 +14,8 @@ function main()
     end if
     
     screen.show()
+    
+    print "Cabo Verde Hub scene created and displayed"
     
     launchTime = CreateObject("roTimespan").TotalMilliseconds() - appStartTime
     print "App launched in: " + launchTime.ToStr() + "ms"
@@ -44,13 +37,7 @@ function main()
         
         if msgType = "roSGScreenEvent" then
             if msg.isScreenClosed() then 
-                print "App closing gracefully..."
-                
-                ' Cleanup
-                if scene <> invalid then
-                    scene = invalid
-                end if
-                
+                print "App closing..."
                 return
             end if
         end if
