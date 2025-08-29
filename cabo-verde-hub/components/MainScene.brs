@@ -1,6 +1,9 @@
 function init()
     m.top.setFocus(true)
     
+    ' Initialize configuration (2024 Security Best Practice)
+    m.config = initializeConfig()
+    
     ' Initialize UI components
     m.categoryList = m.top.findNode("categoryList")
     m.videoGrid = m.top.findNode("videoGrid")
@@ -8,13 +11,29 @@ function init()
     m.loadingOverlay = m.top.findNode("loadingOverlay")
     m.errorOverlay = m.top.findNode("errorOverlay")
     
-    ' YouTube API Configuration
-    m.apiKey = "AIzaSyDVKM9I7EAwJUO15eOrq_8a9sZ-94EG5aU"
-    m.baseUrl = "https://www.googleapis.com/youtube/v3/search"
-    
     ' Current state
     m.currentCategory = 0
     m.focusState = "category"  ' "category" or "video"
+    
+    ' Pagination state (2024 Performance Best Practice)
+    m.currentPage = {}
+    m.hasMoreContent = {}
+    m.loadingMore = false
+    
+    ' Task-based request handling (2024 SceneGraph Best Practice)
+    m.youtubeTask = CreateObject("roSGNode", "YouTubeTask")
+    m.youtubeTask.observeField("result", "onYouTubeTaskResult")
+    m.youtubeTask.observeField("error", "onYouTubeTaskError")
+    
+    ' Thread management tracking (2024 Threading Guidelines)
+    m.activeTasksCount = 0
+    m.maxConcurrentTasks = 3  ' Limit per 2024 guidelines
+    
+    ' Error handling timer (Non-blocking)
+    m.errorTimer = CreateObject("roSGNode", "Timer")
+    m.errorTimer.duration = 5
+    m.errorTimer.repeat = false
+    m.errorTimer.observeField("fire", "onErrorTimer")
     
     ' Cape Verdean search configurations
     setupCategories()
@@ -22,6 +41,12 @@ function init()
     ' Event observers
     m.categoryList.observeField("itemSelected", "onCategorySelected")
     m.videoGrid.observeField("itemSelected", "onVideoSelected")
+    
+    ' Voice remote support (2024 Feature)
+    m.top.observeField("voiceSearchText", "onVoiceSearch")
+    
+    ' Deep linking support
+    handleInitialDeepLink()
     
     ' Initialize with first category
     loadCategoryContent(0)
@@ -96,83 +121,112 @@ function loadCategoryContent(categoryIndex as Integer)
     fetchYouTubeVideos(category.searchTerms, categoryIndex)
 end function
 
-function fetchYouTubeVideos(searchQuery as String, categoryIndex as Integer)
-    ' Build YouTube API URL
-    url = m.baseUrl + "?"
-    url = url + "part=snippet"
-    url = url + "&type=video"
-    url = url + "&maxResults=12"
-    url = url + "&order=relevance"
-    url = url + "&regionCode=PT"
-    url = url + "&relevanceLanguage=pt"
-    url = url + "&key=" + m.apiKey
-    url = url + "&q=" + encodeUriComponent(searchQuery)
+function fetchYouTubeVideos(searchQuery as String, categoryIndex as Integer, pageToken = "" as String)
+    ' 2024 SceneGraph Best Practice: Use Task nodes for background operations
     
-    ' Create HTTP request
-    request = CreateObject("roUrlTransfer")
-    request.SetUrl(url)
-    request.SetRequest("GET")
-    request.SetCertificatesFile("common:/certs/ca-bundle.crt")
-    request.EnablePeerVerification(false)
-    request.EnableHostVerification(false)
-    
-    ' Make request
-    port = CreateObject("roMessagePort")
-    request.SetPort(port)
-    
-    if request.AsyncGetToString() then
-        ' Handle response in separate function
-        m.pendingRequest = {
-            port: port,
-            request: request,
-            categoryIndex: categoryIndex
-        }
-        
-        ' Start response handler
-        m.responseTimer = CreateObject("roTimespan")
-        m.responseTimer.mark()
-        checkResponse()
-    else
-        showError("Falha na conexão com YouTube")
+    ' Initialize pagination for category if needed
+    categoryKey = categoryIndex.ToStr()
+    if m.currentPage[categoryKey] = invalid then
+        m.currentPage[categoryKey] = ""
+        m.hasMoreContent[categoryKey] = true
     end if
+    
+    ' Thread management: Don't exceed concurrent task limit (2024 Guidelines)
+    if m.activeTasksCount >= m.maxConcurrentTasks then
+        showError("Muitas requisições simultâneas. Aguarde.")
+        return
+    end if
+    
+    ' Don't fetch if already loading more content
+    if m.loadingMore and pageToken <> "" then return
+    
+    ' Set loading state
+    if pageToken = "" then
+        m.loadingOverlay.visible = true
+    else
+        m.loadingMore = true
+    end if
+    
+    ' Create cache key
+    cacheKey = createCacheKey(searchQuery, categoryIndex)
+    
+    ' Set up task parameters
+    m.youtubeTask.searchQuery = searchQuery
+    m.youtubeTask.categoryIndex = categoryIndex
+    m.youtubeTask.pageToken = pageToken
+    m.youtubeTask.config = m.config
+    m.youtubeTask.cacheKey = cacheKey
+    m.youtubeTask.isLoadMore = (pageToken <> "")
+    
+    ' Start background task
+    m.youtubeTask.control = "RUN"
+    m.activeTasksCount = m.activeTasksCount + 1
 end function
 
-function checkResponse()
-    if m.pendingRequest <> invalid then
-        msg = m.pendingRequest.port.GetMessage()
-        
-        if msg <> invalid then
-            if type(msg) = "roUrlEvent" then
-                if msg.GetInt() = 1 then  ' Success
-                    response = msg.GetString()
-                    processYouTubeResponse(response, m.pendingRequest.categoryIndex)
-                else  ' Error
-                    showError("Erro ao carregar vídeos do YouTube")
-                end if
-                m.pendingRequest = invalid
-            end if
+function onYouTubeTaskResult()
+    ' 2024 Best Practice: Handle task results in render thread
+    result = m.youtubeTask.result
+    m.activeTasksCount = m.activeTasksCount - 1
+    
+    if result <> invalid and result.success then
+        if result.fromCache then
+            processYouTubeResponse(
+                FormatJSON(result.data),
+                result.categoryIndex,
+                true,
+                "",
+                result.isLoadMore
+            )
         else
-            ' Check for timeout (10 seconds)
-            if m.responseTimer.TotalMilliseconds() > 10000 then
-                showError("Tempo limite excedido")
-                m.pendingRequest = invalid
-            else
-                ' Continue checking
-                CreateObject("roTimespan").Sleep(100)
-                checkResponse()
-            end if
+            processYouTubeResponse(
+                FormatJSON(result.data),
+                result.categoryIndex,
+                false,
+                "",
+                result.isLoadMore
+            )
         end if
     end if
 end function
 
-function processYouTubeResponse(response as String, categoryIndex as Integer)
+function onYouTubeTaskError()
+    ' Handle task errors in render thread
+    error = m.youtubeTask.error
+    m.activeTasksCount = m.activeTasksCount - 1
+    m.loadingMore = false
+    
+    if error <> invalid then
+        showError(error)
+    else
+        showError("Erro desconhecido")
+    end if
+end function
+
+function processYouTubeResponse(response as String, categoryIndex as Integer, fromCache = false as Boolean, cacheKey = "" as String, isLoadMore = false as Boolean)
     try
         jsonResponse = ParseJSON(response)
+        categoryKey = categoryIndex.ToStr()
         
         if jsonResponse <> invalid and jsonResponse.items <> invalid then
-            ' Create video content
-            videoContent = CreateObject("roSGNode", "ContentNode")
+            ' Update pagination info (2024 Performance Enhancement)
+            if jsonResponse.nextPageToken <> invalid then
+                m.currentPage[categoryKey] = jsonResponse.nextPageToken
+                m.hasMoreContent[categoryKey] = true
+            else
+                m.hasMoreContent[categoryKey] = false
+            end if
             
+            ' Create or append to video content
+            videoContent = invalid
+            if isLoadMore and m.videoGrid.content <> invalid then
+                ' Append to existing content
+                videoContent = m.videoGrid.content
+            else
+                ' Create new content
+                videoContent = CreateObject("roSGNode", "ContentNode")
+            end if
+            
+            itemCount = 0
             for each item in jsonResponse.items
                 if item.snippet <> invalid then
                     videoItem = CreateObject("roSGNode", "ContentNode")
@@ -181,12 +235,14 @@ function processYouTubeResponse(response as String, categoryIndex as Integer)
                     videoItem.title = item.snippet.title
                     videoItem.description = item.snippet.description
                     
-                    ' Thumbnail
+                    ' Thumbnail with fallback (2024 Best Practice)
                     if item.snippet.thumbnails <> invalid then
                         if item.snippet.thumbnails.high <> invalid then
                             videoItem.hdPosterUrl = item.snippet.thumbnails.high.url
                         else if item.snippet.thumbnails.medium <> invalid then
                             videoItem.hdPosterUrl = item.snippet.thumbnails.medium.url
+                        else if item.snippet.thumbnails.default <> invalid then
+                            videoItem.hdPosterUrl = item.snippet.thumbnails.default.url
                         end if
                     end if
                     
@@ -201,25 +257,36 @@ function processYouTubeResponse(response as String, categoryIndex as Integer)
                     videoItem.publishedAt = item.snippet.publishedAt
                     
                     videoContent.appendChild(videoItem)
+                    itemCount = itemCount + 1
                 end if
             end for
             
             ' Update UI
             m.videoGrid.content = videoContent
             m.loadingOverlay.visible = false
+            m.loadingMore = false
             
             ' Set focus to video grid if we have content
             if videoContent.getChildCount() > 0 then
-                m.focusState = "video"
-                m.videoGrid.setFocus(true)
+                if not isLoadMore then
+                    m.focusState = "video"
+                    m.videoGrid.setFocus(true)
+                end if
+            else if not isLoadMore then
+                showError("Nenhum vídeo encontrado")
             end if
+            
+            ' Show load more indicator if more content available
+            updateLoadMoreIndicator(categoryIndex)
             
         else
             showError("Nenhum vídeo encontrado")
+            m.loadingMore = false
         end if
         
     catch error
         showError("Erro ao processar resposta")
+        m.loadingMore = false
     end try
 end function
 
@@ -256,14 +323,122 @@ function onVideoStateChange()
 end function
 
 function showError(message as String)
+    ' 2024 Best Practice: Non-blocking error display
     m.loadingOverlay.visible = false
     m.errorOverlay.visible = true
     m.top.findNode("errorText").text = message
     
-    ' Auto-hide error after 5 seconds
-    errorTimer = CreateObject("roTimespan")
-    errorTimer.Sleep(5000)
+    ' Start non-blocking timer for auto-hide
+    m.errorTimer.control = "start"
+end function
+
+function onErrorTimer()
+    ' Auto-hide error overlay
     m.errorOverlay.visible = false
+end function
+
+function loadMoreContent(categoryIndex as Integer)
+    ' Load additional content when user scrolls near end
+    if categoryIndex < 0 or categoryIndex >= m.categories.count() then return
+    
+    categoryKey = categoryIndex.ToStr()
+    if m.hasMoreContent[categoryKey] = invalid or not m.hasMoreContent[categoryKey] then return
+    
+    category = m.categories[categoryIndex]
+    pageToken = m.currentPage[categoryKey]
+    
+    if pageToken <> invalid and pageToken <> "" then
+        fetchYouTubeVideos(category.searchTerms, categoryIndex, pageToken)
+    end if
+end function
+
+function updateLoadMoreIndicator(categoryIndex as Integer)
+    ' Update UI to show if more content is available
+    categoryKey = categoryIndex.ToStr()
+    if m.hasMoreContent[categoryKey] = invalid then return
+    
+    sectionText = m.categories[categoryIndex].sectionTitle
+    
+    if m.hasMoreContent[categoryKey] then
+        sectionText = sectionText + " (▼ Mais conteúdo disponível)"
+    end if
+    
+    m.sectionTitle.text = sectionText
+end function
+
+function createCacheKey(searchTerms as String, categoryIndex as Integer) as String
+    ' Create cache key for API responses
+    return "category_" + categoryIndex.ToStr() + "_" + encodeUriComponent(searchTerms)
+end function
+
+function onVoiceSearch()
+    ' Handle voice search input (2024 Voice Remote Support)
+    searchText = m.top.voiceSearchText
+    
+    if searchText <> invalid and searchText <> "" then
+        ' Perform voice search across all categories
+        performVoiceSearch(searchText)
+    end if
+end function
+
+function performVoiceSearch(searchQuery as String)
+    ' Execute voice search with enhanced query
+    enhancedQuery = searchQuery + ",cabo verde,cape verde"
+    
+    ' Show loading overlay
+    m.loadingOverlay.visible = true
+    m.sectionTitle.text = "Busca por Voz: '" + searchQuery + "'"
+    
+    ' Switch to search mode
+    m.focusState = "search"
+    
+    ' Use task for voice search
+    m.youtubeTask.searchQuery = enhancedQuery
+    m.youtubeTask.categoryIndex = -1  ' Special index for voice search
+    m.youtubeTask.pageToken = ""
+    m.youtubeTask.config = m.config
+    m.youtubeTask.cacheKey = "voice_search_" + encodeUriComponent(searchQuery)
+    m.youtubeTask.isLoadMore = false
+    
+    m.youtubeTask.control = "RUN"
+    m.activeTasksCount = m.activeTasksCount + 1
+end function
+
+function handleInitialDeepLink()
+    ' Handle deep linking on app launch
+    args = m.top.getScene().args
+    if args <> invalid then
+        deepLinkData = handleDeepLink(args)
+        if deepLinkData.handled then
+            executeDeepLink(deepLinkData, m.top)
+        end if
+    end if
+end function
+
+function navigateToCategory(categoryIndex as Integer)
+    ' Deep link navigation to specific category
+    if categoryIndex >= 0 and categoryIndex < m.categories.count() then
+        m.currentCategory = categoryIndex
+        m.categoryList.jumpToItem = categoryIndex
+        loadCategoryContent(categoryIndex)
+    end if
+end function
+
+function playVideoById(videoId as String)
+    ' Deep link direct video playback
+    ' Create content node for direct video play
+    videoContent = CreateObject("roSGNode", "ContentNode")
+    videoContent.videoId = videoId
+    videoContent.url = "https://www.youtube.com/watch?v=" + videoId
+    videoContent.title = "Vídeo Direto"
+    
+    ' Play video directly
+    playVideoContent(videoContent)
+end function
+
+function performSearch(searchQuery as String)
+    ' Deep link search functionality
+    performVoiceSearch(searchQuery)
 end function
 
 function onKeyEvent(key as String, press as Boolean) as Boolean
@@ -300,6 +475,18 @@ function onKeyEvent(key as String, press as Boolean) as Boolean
                     m.focusState = "video"
                     m.videoGrid.setFocus(true)
                     handled = true
+                end if
+            end if
+            
+        else if key = "down" then
+            ' 2024 Enhancement: Auto-load more content when scrolling
+            if m.focusState = "video" and not m.loadingMore then
+                selectedIndex = m.videoGrid.itemSelected
+                totalItems = m.videoGrid.content.getChildCount()
+                
+                ' Load more when approaching end of list
+                if selectedIndex >= totalItems - 4 then
+                    loadMoreContent(m.currentCategory)
                 end if
             end if
         end if

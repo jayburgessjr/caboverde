@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<component name="YouTubeTask" extends="Task">
+  <script type="text/brightscript" uri="pkg:/components/YouTubeTask.brs" />
+  
+  <interface>
+    <!-- Input fields -->
+    <field id="searchQuery" type="string" />
+    <field id="categoryIndex" type="integer" />
+    <field id="pageToken" type="string" />
+    <field id="config" type="assocarray" />
+    <field id="cacheKey" type="string" />
+    
+    <!-- Output fields -->
+    <field id="result" type="assocarray" />
+    <field id="error" type="string" />
+    <field id="isLoadMore" type="boolean" />
+  </interface>
+</component>

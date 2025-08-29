@@ -49,7 +49,9 @@
                itemSpacing="[0, 20]"
                numRows="5"
                showRowLabel="[false]"
-               showRowCounter="[false]" />
+               showRowCounter="[false]"
+               accessibilityLabel="Categorias do conteúdo"
+               accessibilityHint="Navegue pelas categorias de vídeos do Cabo Verde" />
     </Rectangle>
     
     <!-- Main Content Area -->
@@ -86,7 +88,9 @@
                numRows="3"
                numColumns="4"
                showRowLabel="[false]"
-               showRowCounter="[false]" />
+               showRowCounter="[false]"
+               accessibilityLabel="Grade de vídeos"
+               accessibilityHint="Selecione um vídeo para reproduzir" />
     </Rectangle>
     
     <!-- Loading State -->
