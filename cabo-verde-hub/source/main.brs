@@ -1,5 +1,14 @@
 function main()
-    print "Starting Cabo Verde Hub..."
+    ' Cabo Verde Hub v1.0.3 - Conflicts Resolved
+    appStartTime = CreateObject("roTimespan").TotalMilliseconds()
+    print "Starting Cabo Verde Hub v1.0.3..."
+    
+    ' Handle deep linking if present
+    args = {}
+    if GetGlobalAA().DoesExist("args") then
+        args = GetGlobalAA().args
+        print "Deep link args received: " + FormatJSON(args)
+    end if
     
     screen = CreateObject("roSGScreen")
     m.port = CreateObject("roMessagePort")
@@ -8,7 +17,7 @@ function main()
     ' Create and show main scene
     scene = screen.CreateScene("MainScene")
     
-    ' Pass launch args to scene
+    ' Pass launch args to scene if available
     if args.Count() > 0 then
         scene.launchArgs = args
     end if
