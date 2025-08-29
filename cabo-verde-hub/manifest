@@ -1,10 +1,13 @@
+# Cabo Verde Hub - 2024 Roku Channel
+# Conflicts Resolved - Production Ready
+
 title=Cabo Verde Hub
+subtitle=Kultura • Muzika • Notisia
 major_version=1
 minor_version=0
-build_version=2
+build_version=3
 
-# Application Info
-subtitle=Kultura • Muzika • Notisia
+# Channel Icons
 mm_icon_focus_hd=pkg:/images/icon_focus_hd.png
 mm_icon_side_hd=pkg:/images/icon_side_hd.png
 mm_icon_focus_sd=pkg:/images/icon_focus_sd.png
@@ -16,14 +19,20 @@ splash_screen_sd=pkg:/images/splash_sd.jpg
 splash_color=#1565c0
 splash_min_time=1500
 
-# Resolution Support
+# 2024 Requirements
 ui_resolutions=fhd,hd
 rsg_version=1.2
-
-# Features
 supports_input_launch=1
 screensaver_title=Cabo Verde Hub
 screensaver_private=1
 
-# Performance
-bs_libs_required=roku_ads_lib
+# Modern Features
+supports_voice_remote=1
+supports_accessibility=1
+channel_genre=special
+parental_rating=G
+locale=pt_CV
+
+# Deep Linking Support
+supports_universal_deep_linking=1
+deep_linking_disabled=0
