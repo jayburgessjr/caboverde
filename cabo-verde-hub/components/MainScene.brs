@@ -97,6 +97,15 @@ function loadCategoryContent(categoryIndex as Integer)
 end function
 
 function fetchYouTubeVideos(searchQuery as String, categoryIndex as Integer)
+    ' Check cache first (5-minute cache)
+    cacheKey = "category_" + categoryIndex.ToStr()
+    cachedData = getCachedResponse(cacheKey)
+    
+    if cachedData <> invalid then
+        processYouTubeResponse(cachedData, categoryIndex)
+        return
+    end if
+    
     ' Build YouTube API URL
     url = m.baseUrl + "?"
     url = url + "part=snippet"
@@ -108,13 +117,15 @@ function fetchYouTubeVideos(searchQuery as String, categoryIndex as Integer)
     url = url + "&key=" + m.apiKey
     url = url + "&q=" + encodeUriComponent(searchQuery)
     
-    ' Create HTTP request
+    ' Create HTTP request with SECURE settings
     request = CreateObject("roUrlTransfer")
     request.SetUrl(url)
     request.SetRequest("GET")
     request.SetCertificatesFile("common:/certs/ca-bundle.crt")
-    request.EnablePeerVerification(false)
-    request.EnableHostVerification(false)
+    
+    ' CRITICAL: Enable certificate verification for security
+    request.EnablePeerVerification(true)
+    request.EnableHostVerification(true)
     
     ' Make request
     port = CreateObject("roMessagePort")
@@ -128,46 +139,70 @@ function fetchYouTubeVideos(searchQuery as String, categoryIndex as Integer)
             categoryIndex: categoryIndex
         }
         
-        ' Start response handler
+        ' Start response handler with timer
         m.responseTimer = CreateObject("roTimespan")
         m.responseTimer.mark()
-        checkResponse()
+        startResponseChecker()
     else
         showError("Falha na conexão com YouTube")
     end if
 end function
 
 function checkResponse()
+    ' FIXED: Non-recursive response checking with timer
     if m.pendingRequest <> invalid then
         msg = m.pendingRequest.port.GetMessage()
         
         if msg <> invalid then
             if type(msg) = "roUrlEvent" then
-                if msg.GetInt() = 1 then  ' Success
+                responseCode = msg.GetResponseCode()
+                if responseCode = 200 then
                     response = msg.GetString()
                     processYouTubeResponse(response, m.pendingRequest.categoryIndex)
-                else  ' Error
-                    showError("Erro ao carregar vídeos do YouTube")
+                else
+                    showError("Erro HTTP: " + responseCode.ToStr())
                 end if
                 m.pendingRequest = invalid
+                
+                ' Stop checking timer
+                if m.responseCheckTimer <> invalid then
+                    m.responseCheckTimer.control = "stop"
+                end if
             end if
         else
             ' Check for timeout (10 seconds)
             if m.responseTimer.TotalMilliseconds() > 10000 then
                 showError("Tempo limite excedido")
                 m.pendingRequest = invalid
-            else
-                ' Continue checking
-                CreateObject("roTimespan").Sleep(100)
-                checkResponse()
+                
+                ' Stop checking timer
+                if m.responseCheckTimer <> invalid then
+                    m.responseCheckTimer.control = "stop"
+                end if
             end if
         end if
     end if
 end function
 
+function startResponseChecker()
+    ' Create timer for non-blocking response checking
+    if m.responseCheckTimer = invalid then
+        m.responseCheckTimer = CreateObject("roSGNode", "Timer")
+        m.responseCheckTimer.duration = 0.1  ' Check every 100ms
+        m.responseCheckTimer.repeat = true
+        m.responseCheckTimer.observeField("fire", "checkResponse")
+    end if
+    
+    m.responseCheckTimer.control = "start"
+end function
+
 function processYouTubeResponse(response as String, categoryIndex as Integer)
     try
         jsonResponse = ParseJSON(response)
+        
+        ' Cache the response (5-minute cache)
+        cacheKey = "category_" + categoryIndex.ToStr()
+        setCachedResponse(cacheKey, response)
         
         if jsonResponse <> invalid and jsonResponse.items <> invalid then
             ' Create video content
@@ -260,10 +295,56 @@ function showError(message as String)
     m.errorOverlay.visible = true
     m.top.findNode("errorText").text = message
     
-    ' Auto-hide error after 5 seconds
-    errorTimer = CreateObject("roTimespan")
-    errorTimer.Sleep(5000)
+    ' FIXED: Non-blocking error timer
+    if m.errorTimer = invalid then
+        m.errorTimer = CreateObject("roSGNode", "Timer")
+        m.errorTimer.duration = 5
+        m.errorTimer.repeat = false
+        m.errorTimer.observeField("fire", "onErrorTimer")
+    end if
+    
+    m.errorTimer.control = "start"
+end function
+
+function onErrorTimer()
     m.errorOverlay.visible = false
+end function
+
+function getCachedResponse(cacheKey as String) as String
+    ' Get cached API response if still valid (5 minutes)
+    sec = CreateObject("roRegistrySection", "CaboVerdeCache")
+    
+    cachedData = sec.Read(cacheKey)
+    if cachedData <> "" and cachedData <> invalid then
+        try
+            parsedCache = ParseJSON(cachedData)
+            if parsedCache <> invalid and parsedCache.timestamp <> invalid then
+                currentTime = CreateObject("roTimespan").TotalMilliseconds()
+                if (currentTime - parsedCache.timestamp) < 300000 then  ' 5 minutes
+                    print "[Cache] Using cached response for: " + cacheKey
+                    return parsedCache.data
+                end if
+            end if
+        catch error
+            ' Invalid cache entry, ignore
+        end try
+    end if
+    
+    return invalid
+end function
+
+function setCachedResponse(cacheKey as String, data as String)
+    ' Cache API response with timestamp
+    sec = CreateObject("roRegistrySection", "CaboVerdeCache")
+    
+    cacheData = {
+        timestamp: CreateObject("roTimespan").TotalMilliseconds()
+        data: data
+    }
+    
+    sec.Write(cacheKey, FormatJSON(cacheData))
+    sec.Flush()
+    print "[Cache] Cached response for: " + cacheKey
 end function
 
 function onKeyEvent(key as String, press as Boolean) as Boolean
